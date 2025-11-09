@@ -152,6 +152,7 @@ async function handleInvoices(request, method, segments) {
       items: body.items,
       subTotal: body.subTotal,
       grandTotal: body.grandTotal,
+      paymentMode: body.paymentMode || 'Cash' // Add payment mode
     };
 
     await invoices.insertOne(invoice);
@@ -172,19 +173,71 @@ async function handleInvoices(request, method, segments) {
       }
     }
 
-    // Generate WhatsApp link
+    // Generate WhatsApp message with formatted bill
     let whatsappLink = null;
     if (body.customer?.whatsapp) {
       const phone = body.customer.whatsapp.replace(/[^0-9]/g, '');
-      const message = encodeURIComponent(
-        `Thank you for shopping with us!\n\nInvoice #${invoice.id}\nTotal: ₹${invoice.grandTotal.toFixed(2)}\n\nView your invoice: ${process.env.NEXT_PUBLIC_BASE_URL}/invoices/${invoice.id}`
-      );
+      
+      // Get shop info for the message
+      const settings = await getCollection('settings');
+      const shopInfo = await settings.findOne({ id: 'shop' }) || {
+        name: 'Jewelry Store',
+        phone: '',
+        address: ''
+      };
+      
+      // Format the date
+      const invoiceDate = new Date(invoice.date).toLocaleDateString('en-IN');
+      
+      // Create items list
+      const itemsList = invoice.items.map((item, index) => 
+        `${index + 1}. ${item.name} (${item.qty}) - ₹${(item.qty * item.price).toFixed(2)}`
+      ).join('\n');
+      
+      // Create the formatted message with proper emojis
+      const billText = `\uD83D\uDC8E *${shopInfo.name || 'Jewelry Store'}*
+
+\uD83D\uDCCD ${shopInfo.address || '123 Main Street'}
+
+\uD83D\uDCDE ${shopInfo.phone || '+91-9876543210'}
+
+
+
+\uD83E\uDDFE *INVOICE DETAILS*
+
+━━━━━━━━━━━━━━━━━━━
+
+\uD83E\uDDFE Invoice No: ${invoice.id.substring(0, 8)}
+
+\uD83D\uDCC5 Date: ${invoiceDate}
+
+\uD83D\uDC64 Customer: ${invoice.customer?.name || 'Walk-in Customer'}
+
+
+
+━━━━━━━━━━━━━━━━━━━
+
+${itemsList}
+
+
+
+━━━━━━━━━━━━━━━━━━━
+
+\uD83D\uDCB0 *TOTAL:* ₹${invoice.grandTotal.toFixed(2)}
+
+✅ *Paid via:* ${invoice.paymentMode}
+
+
+
+Thank you for shopping with *${shopInfo.name || 'Jewelry Store'}*! \uD83D\uDCAB`;
+
+      const message = encodeURIComponent(billText);
       whatsappLink = `https://wa.me/${phone}?text=${message}`;
     }
 
     return NextResponse.json({ 
       invoice, 
-      whatsappLink 
+      whatsappLink
     }, { status: 201 });
   }
 
@@ -222,7 +275,7 @@ async function handleInvoices(request, method, segments) {
         return new NextResponse(pdfBuffer, {
           headers: {
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="invoice-thermal-${id}.pdf"`,
+            'Content-Disposition': `inline; filename="invoice-thermal-${id}.pdf"`,
           },
         });
       }
@@ -264,9 +317,12 @@ async function handleSettings(request, method, segments) {
   if (method === 'PUT' && segments[0] === 'shop') {
     const body = await request.json();
     
+    // Remove any _id field from the body to avoid MongoDB immutable field error
+    const { _id, ...updateData } = body;
+    
     await settings.updateOne(
       { id: 'shop' },
-      { $set: { ...body, id: 'shop' } },
+      { $set: { ...updateData, id: 'shop' } },
       { upsert: true }
     );
 

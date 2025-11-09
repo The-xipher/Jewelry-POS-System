@@ -5,7 +5,7 @@ const nextConfig = {
   },
   experimental: {
     // Remove if not using Server Components
-    serverComponentsExternalPackages: ['mongodb'],
+    serverComponentsExternalPackages: ['mongodb', '@foliojs-fork/pdfkit'],
   },
   webpack(config, { dev }) {
     if (dev) {
