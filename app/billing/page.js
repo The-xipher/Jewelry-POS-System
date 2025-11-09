@@ -95,8 +95,8 @@ export default function BillingPage() {
       return;
     }
 
-    if (!customerName.trim() || !customerPhone.trim()) {
-      toast.error('Please enter customer details');
+    if (!customerName.trim()) {
+      toast.error('Please enter customer name');
       return;
     }
 
@@ -104,7 +104,7 @@ export default function BillingPage() {
       const invoiceData = {
         customer: {
           name: customerName,
-          whatsapp: customerPhone
+          whatsapp: customerPhone || null
         },
         discountPercent: discount,
         gstPercent: gstPercent,
@@ -337,13 +337,16 @@ export default function BillingPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="customerPhone">WhatsApp Number</Label>
+                <Label htmlFor="customerPhone">WhatsApp Number (Optional)</Label>
                 <Input
                   id="customerPhone"
                   placeholder="91XXXXXXXXXX"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty if you don't want to share via WhatsApp
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="discount">Discount (%)</Label>
