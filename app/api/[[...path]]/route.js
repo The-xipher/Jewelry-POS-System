@@ -149,10 +149,27 @@ async function handleInvoices(request, method, segments) {
       date: new Date().toISOString(),
       customer: body.customer,
       discountPercent: body.discountPercent || 0,
+      gstPercent: body.gstPercent || 0,
       items: body.items,
       subTotal: body.subTotal,
       grandTotal: body.grandTotal,
+      paymentMode: body.paymentMode || 'Cash' // Add payment mode
     };
+
+    // Reduce stock for each item in the invoice
+    const products = await getCollection('products');
+    for (const item of invoice.items) {
+      if (item.productId) {
+        const product = await products.findOne({ id: item.productId });
+        if (product) {
+          const newStock = Math.max(0, product.stock - item.qty);
+          await products.updateOne(
+            { id: item.productId },
+            { $set: { stock: newStock } }
+          );
+        }
+      }
+    }
 
     await invoices.insertOne(invoice);
 
@@ -172,21 +189,91 @@ async function handleInvoices(request, method, segments) {
       }
     }
 
-    // Generate WhatsApp link
-    let whatsappLink = null;
-    if (body.customer?.whatsapp) {
-      const phone = body.customer.whatsapp.replace(/[^0-9]/g, '');
-      const message = encodeURIComponent(
-        `Thank you for shopping with us!\n\nInvoice #${invoice.id}\nTotal: ₹${invoice.grandTotal.toFixed(2)}\n\nView your invoice: ${process.env.NEXT_PUBLIC_BASE_URL}/invoices/${invoice.id}`
-      );
-      whatsappLink = `https://wa.me/${phone}?text=${message}`;
-    }
+    // Generate WhatsApp message with formatted bill
+let whatsappLink = null;
 
-    return NextResponse.json({ 
-      invoice, 
-      whatsappLink 
-    }, { status: 201 });
+if (body.customer?.whatsapp) {
+  // 1) Normalize phone to WhatsApp E.164-like (digits only, with country code)
+  let phone = (body.customer.whatsapp || '').replace(/\D/g, '');
+  // If it's a 10-digit Indian mobile, prepend 91
+  if (/^[6-9]\d{9}$/.test(phone)) phone = `91${phone}`;
+  // Trim leading 0s (landlines often have them)
+  phone = phone.replace(/^0+/, '');
+
+  // 2) Get shop info
+  const settings = await getCollection('settings');
+  const shopInfo = (await settings.findOne({ id: 'shop' })) || {
+    name: 'Jewelry Store',
+    phone: '',
+    address: ''
+  };
+
+  // 3) Format date (DD/MM/YYYY to avoid ambiguity)
+  const invoiceDate = new Date(invoice.date).toLocaleDateString('en-IN', {
+    day: '2-digit', month: '2-digit', year: 'numeric'
+  });
+
+  // 4) Build items list
+  const itemsList = invoice.items.map((item, idx) =>
+    `${idx + 1}. 💍 *${item.name}* (${item.qty}) – ₹${(item.qty * item.price).toFixed(2)}`
+  ).join('\n');
+
+  // 5) Calculations
+  const discountAmount = (invoice.subTotal || 0) * ((invoice.discountPercent || 0) / 100);
+  const amountAfterDiscount = (invoice.subTotal || 0) - discountAmount;
+  const gstAmount = amountAfterDiscount * ((invoice.gstPercent || 0) / 100);
+
+  // 6) Compose message (plain UTF-16 JS string, with \n line breaks)
+  let billText = `🙏 Thank you for shopping with ${shopInfo.name || 'Jewelry Store'}! 🙏
+
+🏪 ${shopInfo.name || 'Jewelry Store'}
+📍 ${shopInfo.address || '123 Main Street'}
+📞 ${shopInfo.phone || '+91-9876543210'}
+
+━━━━━━━━━━━━━━━━━━━
+🧾 INVOICE DETAILS
+━━━━━━━━━━━━━━━━━━━
+📄 Invoice No: ${String(invoice.id || '').substring(0, 8)}
+📅 Date: ${invoiceDate}
+👤 Customer: ${invoice.customer?.name || 'Walk-in Customer'}
+━━━━━━━━━━━━━━━━━━━
+
+💎 ITEMS PURCHASED
+${itemsList}
+
+━━━━━━━━━━━━━━━━━━━
+💰 BILLING SUMMARY
+━━━━━━━━━━━━━━━━━━━
+💵 Subtotal: ₹${(invoice.subTotal || 0).toFixed(2)}`;
+
+  if ((invoice.discountPercent || 0) > 0) {
+    billText += `\n💸 *Discount (${invoice.discountPercent}%):* -₹${discountAmount.toFixed(2)}`;
   }
+
+  if ((invoice.gstPercent || 0) > 0) {
+    billText += `\n🧮 *GST (${invoice.gstPercent}%):* +₹${gstAmount.toFixed(2)}`;
+  }
+
+  billText += `
+
+💳 Payment Mode: ${invoice.paymentMode || 'Cash'}
+💰 Grand Total: ₹${(invoice.grandTotal || 0).toFixed(2)}
+
+━━━━━━━━━━━━━━━━━━━
+🌟 We appreciate your trust and loyalty!
+💬 For queries, contact us at ${shopInfo.phone || '+91-9876543210'}.`;
+
+  // 7) Correct URL encoding — ONLY encodeURIComponent
+  const encoded = encodeURIComponent(billText);
+
+  // Use api.whatsapp.com or wa.me — both are fine
+  whatsappLink = `https://api.whatsapp.com/send?phone=${phone}&text=${encoded}`;
+  // Or: whatsappLink = `https://wa.me/${phone}?text=${encoded}`;
+}
+
+    return NextResponse.json({ invoice, whatsappLink }, { status: 201 });
+  }
+
 
   // GET /api/invoices/:id
   if (method === 'GET' && segments.length >= 1) {
@@ -222,7 +309,7 @@ async function handleInvoices(request, method, segments) {
         return new NextResponse(pdfBuffer, {
           headers: {
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="invoice-thermal-${id}.pdf"`,
+            'Content-Disposition': `inline; filename="invoice-thermal-${id}.pdf"`,
           },
         });
       }
@@ -264,9 +351,12 @@ async function handleSettings(request, method, segments) {
   if (method === 'PUT' && segments[0] === 'shop') {
     const body = await request.json();
     
+    // Remove any _id field from the body to avoid MongoDB immutable field error
+    const { _id, ...updateData } = body;
+    
     await settings.updateOne(
       { id: 'shop' },
-      { $set: { ...body, id: 'shop' } },
+      { $set: { ...updateData, id: 'shop' } },
       { upsert: true }
     );
 

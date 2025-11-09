@@ -7,9 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Search, Trash2, Plus, Minus, ShoppingBag } from 'lucide-react';
+import { Search, Trash2, Plus, Minus, ShoppingBag, Share2, Printer } from 'lucide-react';
 import useCartStore from '@/store/cartStore';
+import useSettingsStore from '@/store/settingsStore';
 
 export default function BillingPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,16 +19,32 @@ export default function BillingPage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [discount, setDiscount] = useState(0);
+  const [gstPercent, setGstPercent] = useState(0);
+  const [paymentMode, setPaymentMode] = useState('Cash');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [whatsappLink, setWhatsappLink] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
+  const [currentInvoice, setCurrentInvoice] = useState(null);
+  const { shopInfo } = useSettingsStore();
 
   const { items, addItem, updateQuantity, removeItem, clearCart } = useCartStore();
 
   const subTotal = items.reduce((sum, item) => sum + (item.sellPrice * item.qty), 0);
   const discountAmount = subTotal * (discount / 100);
-  const grandTotal = subTotal - discountAmount;
+  const amountAfterDiscount = subTotal - discountAmount;
+  const gstAmount = amountAfterDiscount * (gstPercent / 100);
+  const grandTotal = amountAfterDiscount + gstAmount;
+
+  // Load shop info on mount and set default GST
+  useEffect(() => {
+    useSettingsStore.getState().loadShopInfo().then(() => {
+      const settings = useSettingsStore.getState().shopInfo;
+      if (settings.defaultGstPercent !== undefined) {
+        setGstPercent(settings.defaultGstPercent);
+      }
+    });
+  }, []);
 
   // Search products
   const handleSearch = async () => {
@@ -89,6 +107,8 @@ export default function BillingPage() {
           whatsapp: customerPhone
         },
         discountPercent: discount,
+        gstPercent: gstPercent,
+        paymentMode: paymentMode,
         items: items.map(item => ({
           productId: item.id,
           name: item.name,
@@ -109,6 +129,7 @@ export default function BillingPage() {
 
       if (response.ok) {
         setWhatsappLink(data.whatsappLink || '');
+        setCurrentInvoice(data.invoice);
         setShowSuccessModal(true);
         clearCart();
         setCustomerName('');
@@ -122,6 +143,31 @@ export default function BillingPage() {
     } catch (error) {
       console.error('Invoice error:', error);
       toast.error('Failed to create invoice');
+    }
+  };
+
+  // Share on WhatsApp
+  const handleShareOnWhatsApp = () => {
+    if (whatsappLink) {
+      window.open(whatsappLink, '_blank');
+    }
+  };
+
+  // Print Thermal PDF directly using window.open with print trigger
+  const handlePrintThermalPDF = () => {
+    if (currentInvoice?.id) {
+      // Open thermal PDF in new window with inline display
+      const printWindow = window.open(`/api/invoices/${currentInvoice.id}/pdf-thermal`, '_blank');
+      
+      // Try to print automatically after a short delay
+      setTimeout(() => {
+        try {
+          printWindow.print();
+        } catch (e) {
+          // If auto-print fails, user can manually press Ctrl+P
+          console.log('Auto-print failed, please use Ctrl+P to print');
+        }
+      }, 1500);
     }
   };
 
@@ -310,6 +356,35 @@ export default function BillingPage() {
                   onChange={(e) => setDiscount(Number(e.target.value))}
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="gstPercent">GST (%)</Label>
+                <Input
+                  id="gstPercent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={gstPercent}
+                  onChange={(e) => setGstPercent(Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Default from settings: {shopInfo.defaultGstPercent || 0}%
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="paymentMode">Payment Mode</Label>
+                <Select value={paymentMode} onValueChange={setPaymentMode}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select payment mode" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Card">Card</SelectItem>
+                    <SelectItem value="UPI">UPI</SelectItem>
+                    <SelectItem value="Net Banking">Net Banking</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardContent>
           </Card>
 
@@ -328,6 +403,16 @@ export default function BillingPage() {
                   <div className="flex justify-between text-red-600">
                     <span>Discount ({discount}%):</span>
                     <span>-₹{discountAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount after discount:</span>
+                  <span className="font-semibold">₹{amountAfterDiscount.toFixed(2)}</span>
+                </div>
+                {gstPercent > 0 && (
+                  <div className="flex justify-between">
+                    <span>GST ({gstPercent}%):</span>
+                    <span>+₹{gstAmount.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-lg font-bold border-t pt-2">
@@ -360,19 +445,33 @@ export default function BillingPage() {
           </DialogHeader>
           <div className="py-4">
             <p className="text-center text-2xl font-bold text-green-600">✓ Success</p>
-            <p className="text-center mt-2">Total: ₹{grandTotal.toFixed(2)}</p>
+            {currentInvoice && (
+              <>
+                <p className="text-center mt-2">Total: ₹{currentInvoice.grandTotal.toFixed(2)}</p>
+                <p className="text-center mt-1">Payment Mode: {currentInvoice.paymentMode}</p>
+              </>
+            )}
           </div>
-          <DialogFooter className="flex-col space-y-2">
+          <DialogFooter className="flex flex-col gap-2 sm:flex-col">
+            <Button
+              className="w-full"
+              onClick={handlePrintThermalPDF}
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              Print Thermal Receipt
+            </Button>
             {whatsappLink && (
               <Button
+                variant="outline"
                 className="w-full"
-                onClick={() => window.open(whatsappLink, '_blank')}
+                onClick={handleShareOnWhatsApp}
               >
+                <Share2 className="h-4 w-4 mr-2" />
                 Share on WhatsApp
               </Button>
             )}
             <Button
-              variant="outline"
+              variant="ghost"
               className="w-full"
               onClick={() => setShowSuccessModal(false)}
             >

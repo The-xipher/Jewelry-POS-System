@@ -123,6 +123,23 @@ export default function SettingsPage() {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="defaultGstPercent">Default GST Percentage (%)</Label>
+              <Input
+                id="defaultGstPercent"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                placeholder="e.g., 3 or 18"
+                value={formData.defaultGstPercent || ''}
+                onChange={(e) => handleChange('defaultGstPercent', parseFloat(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted-foreground">
+                This GST percentage will be automatically applied in billing
+              </p>
+            </div>
+
             <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
               <p className="text-sm text-blue-800 dark:text-blue-200">
                 💡 These details will appear on all printed invoices and thermal receipts.

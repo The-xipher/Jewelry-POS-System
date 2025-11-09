@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +13,8 @@ export default function BarcodePrintPage() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [searchResults, setSearchResults] = useState([]);
+  const [barcodeImages, setBarcodeImages] = useState({}); // Cache for barcode images
+  const printWindowRef = useRef(null);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -41,12 +43,147 @@ export default function BarcodePrintPage() {
     }
   };
 
+  // Preload barcode image when product is selected
+  useEffect(() => {
+    if (selectedProduct && !barcodeImages[selectedProduct.id]) {
+      // Preload the image
+      const img = new Image();
+      img.src = `/api/products/${selectedProduct.id}/barcode`;
+      img.onload = () => {
+        setBarcodeImages(prev => ({
+          ...prev,
+          [selectedProduct.id]: img.src
+        }));
+      };
+      img.onerror = () => {
+        console.error('Failed to load barcode image');
+      };
+    }
+  }, [selectedProduct, barcodeImages]);
+
   const handlePrint = () => {
     if (!selectedProduct) {
       toast.error('Please select a product first');
       return;
     }
-    window.print();
+    
+    // Create a new window for printing
+    const printWindow = window.open('', '_blank');
+    printWindowRef.current = printWindow;
+    
+    // Write HTML content to the print window
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Barcode Print</title>
+        <style>
+          @page {
+            size: 100mm 15mm;
+            margin: 0;
+          }
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+          }
+          .label {
+            width: 100mm;
+            height: 15mm;
+            position: relative;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            page-break-inside: avoid;
+          }
+          .left-section {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 48mm;
+            padding: 2mm;
+            box-sizing: border-box;
+          }
+          .center-line {
+            position: absolute;
+            left: 48mm;
+            top: 1mm;
+            bottom: 1mm;
+            width: 1px;
+            border-left: 1px dashed #999;
+          }
+          .right-section {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 48mm;
+            padding: 2mm;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+          }
+          .barcode-img {
+            height: 8mm;
+            width: 40mm;
+            object-fit: contain;
+            -webkit-print-color-adjust: exact;
+            color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .price {
+            font-size: 9pt;
+            font-weight: bold;
+            margin-top: 1mm;
+          }
+          .product-name {
+            font-size: 8pt;
+            font-weight: bold;
+            line-height: 1.2;
+          }
+          .product-code {
+            font-size: 7pt;
+            margin-top: 1mm;
+          }
+          .tail {
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 3mm;
+            height: 15mm;
+            background-color: #000;
+          }
+        </style>
+      </head>
+      <body>
+        ${Array.from({ length: quantity }).map(() => `
+          <div class="label">
+            <div class="left-section">
+              <div class="product-name">${selectedProduct.name.substring(0, 30)}</div>
+              <div class="product-code">Code: ${selectedProduct.code}</div>
+            </div>
+            <div class="center-line"></div>
+            <div class="right-section">
+              <img src="/api/products/${selectedProduct.id}/barcode" class="barcode-img" alt="Barcode" />
+              <div class="price">₹${selectedProduct.sellPrice}</div>
+            </div>
+            <div class="tail"></div>
+          </div>
+        `).join('')}
+      </body>
+      </html>
+    `);
+    
+    printWindow.document.close();
+    
+    // Wait for content to load, then print
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      // printWindow.close(); // Don't close immediately to allow user to review
+    }, 500);
   };
 
   return (
@@ -196,44 +333,15 @@ export default function BarcodePrintPage() {
           </CardContent>
         </Card>
       )}
-
-      {/* Print Area */}
-      {selectedProduct && (
-        <div className="hidden print:block">
-          {Array.from({ length: quantity }).map((_, index) => (
-            <LabelPreview key={index} product={selectedProduct} />
-          ))}
-        </div>
-      )}
-
-      <style jsx global>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          .print\\:block, .print\\:block * {
-            visibility: visible;
-          }
-          .print\\:block {
-            position: absolute;
-            left: 0;
-            top: 0;
-          }
-          @page {
-            size: 100mm 15mm;
-            margin: 0;
-          }
-        }
-      `}</style>
     </div>
   );
 }
 
 function LabelPreview({ product }) {
   return (
-    <div className="relative bg-white text-black" style={{ width: '100mm', height: '15mm', border: '1px solid #ccc' }}>
+    <div className="relative bg-white text-black" style={{ width: '100mm', height: '15mm', border: '1px solid #ccc', boxSizing: 'border-box' }}>
       {/* Left Section - Product Info */}
-      <div className="absolute left-0 top-0 bottom-0" style={{ width: '48mm', padding: '2mm' }}>
+      <div className="absolute left-0 top-0 bottom-0" style={{ width: '48mm', padding: '2mm', boxSizing: 'border-box' }}>
         <div className="text-xs font-bold" style={{ fontSize: '8pt', lineHeight: '1.2' }}>
           {product.name.substring(0, 30)}
         </div>
@@ -246,7 +354,7 @@ function LabelPreview({ product }) {
       <div className="absolute" style={{ left: '48mm', top: '1mm', bottom: '1mm', width: '1px', borderLeft: '1px dashed #999' }} />
 
       {/* Right Section - Barcode & Price */}
-      <div className="absolute right-0 top-0 bottom-0" style={{ width: '48mm', padding: '2mm', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+      <div className="absolute right-0 top-0 bottom-0" style={{ width: '48mm', padding: '2mm', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
         <img
           src={`/api/products/${product.id}/barcode`}
           alt="Barcode"
