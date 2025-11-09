@@ -149,6 +149,7 @@ async function handleInvoices(request, method, segments) {
       date: new Date().toISOString(),
       customer: body.customer,
       discountPercent: body.discountPercent || 0,
+      gstPercent: body.gstPercent || 0,
       items: body.items,
       subTotal: body.subTotal,
       grandTotal: body.grandTotal,
@@ -209,8 +210,13 @@ async function handleInvoices(request, method, segments) {
         `${index + 1}. ${item.name} (${item.qty}) - ₹${(item.qty * item.price).toFixed(2)}`
       ).join('\n');
       
+      // Calculate amounts for the bill
+      const discountAmount = invoice.subTotal * (invoice.discountPercent / 100);
+      const amountAfterDiscount = invoice.subTotal - discountAmount;
+      const gstAmount = amountAfterDiscount * (invoice.gstPercent / 100);
+      
       // Create the formatted message with proper emojis
-      const billText = `\uD83D\uDC8E *${shopInfo.name || 'Jewelry Store'}*
+      let billText = `\uD83D\uDC8E *${shopInfo.name || 'Jewelry Store'}*
 
 \uD83D\uDCCD ${shopInfo.address || '123 Main Street'}
 
@@ -238,7 +244,23 @@ ${itemsList}
 
 ━━━━━━━━━━━━━━━━━━━
 
-\uD83D\uDCB0 *TOTAL:* ₹${invoice.grandTotal.toFixed(2)}
+\uD83D\uDCB0 *BILLING SUMMARY*
+
+*Subtotal:* ₹${invoice.subTotal.toFixed(2)}`;
+
+      if (invoice.discountPercent > 0) {
+        billText += `
+*Discount (${invoice.discountPercent}%):* -₹${discountAmount.toFixed(2)}`;
+      }
+      
+      if (invoice.gstPercent > 0) {
+        billText += `
+*GST (${invoice.gstPercent}%):* +₹${gstAmount.toFixed(2)}`;
+      }
+      
+      billText += `
+
+*Grand Total:* ₹${invoice.grandTotal.toFixed(2)}
 
 ✅ *Paid via:* ${invoice.paymentMode}
 

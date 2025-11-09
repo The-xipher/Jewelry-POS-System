@@ -14,12 +14,12 @@ export function Navbar() {
               💎 POS System
             </Link>
             <div className="hidden md:flex space-x-4">
-              <NavLink href="/dashboard">Dashboard</NavLink>
               <NavLink href="/billing">Billing</NavLink>
               <NavLink href="/inventory">Inventory</NavLink>
               <NavLink href="/barcode-print">Barcode Print</NavLink>
               <NavLink href="/invoices">Invoices</NavLink>
               <NavLink href="/settings">Settings</NavLink>
+              <NavLink href="/dashboard">Dashboard</NavLink>
             </div>
           </div>
           <ThemeToggle />

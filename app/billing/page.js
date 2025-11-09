@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { Search, Trash2, Plus, Minus, ShoppingBag, Share2, Printer } from 'lucide-react';
 import useCartStore from '@/store/cartStore';
+import useSettingsStore from '@/store/settingsStore';
 
 export default function BillingPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -18,18 +19,27 @@ export default function BillingPage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [discount, setDiscount] = useState(0);
+  const [gstPercent, setGstPercent] = useState(0);
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [whatsappLink, setWhatsappLink] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
   const [currentInvoice, setCurrentInvoice] = useState(null);
+  const { shopInfo } = useSettingsStore();
 
   const { items, addItem, updateQuantity, removeItem, clearCart } = useCartStore();
 
   const subTotal = items.reduce((sum, item) => sum + (item.sellPrice * item.qty), 0);
   const discountAmount = subTotal * (discount / 100);
-  const grandTotal = subTotal - discountAmount;
+  const amountAfterDiscount = subTotal - discountAmount;
+  const gstAmount = amountAfterDiscount * (gstPercent / 100);
+  const grandTotal = amountAfterDiscount + gstAmount;
+
+  // Load shop info on mount
+  useEffect(() => {
+    useSettingsStore.getState().loadShopInfo();
+  }, []);
 
   // Search products
   const handleSearch = async () => {
@@ -92,6 +102,7 @@ export default function BillingPage() {
           whatsapp: customerPhone
         },
         discountPercent: discount,
+        gstPercent: gstPercent,
         paymentMode: paymentMode,
         items: items.map(item => ({
           productId: item.id,
@@ -341,6 +352,17 @@ export default function BillingPage() {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="gstPercent">GST (%)</Label>
+                <Input
+                  id="gstPercent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={gstPercent}
+                  onChange={(e) => setGstPercent(Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="paymentMode">Payment Mode</Label>
                 <Select value={paymentMode} onValueChange={setPaymentMode}>
                   <SelectTrigger>
@@ -372,6 +394,16 @@ export default function BillingPage() {
                   <div className="flex justify-between text-red-600">
                     <span>Discount ({discount}%):</span>
                     <span>-₹{discountAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount after discount:</span>
+                  <span className="font-semibold">₹{amountAfterDiscount.toFixed(2)}</span>
+                </div>
+                {gstPercent > 0 && (
+                  <div className="flex justify-between">
+                    <span>GST ({gstPercent}%):</span>
+                    <span>+₹{gstAmount.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-lg font-bold border-t pt-2">
