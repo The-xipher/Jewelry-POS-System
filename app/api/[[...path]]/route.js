@@ -155,6 +155,21 @@ async function handleInvoices(request, method, segments) {
       paymentMode: body.paymentMode || 'Cash' // Add payment mode
     };
 
+    // Reduce stock for each item in the invoice
+    const products = await getCollection('products');
+    for (const item of invoice.items) {
+      if (item.productId) {
+        const product = await products.findOne({ id: item.productId });
+        if (product) {
+          const newStock = Math.max(0, product.stock - item.qty);
+          await products.updateOne(
+            { id: item.productId },
+            { $set: { stock: newStock } }
+          );
+        }
+      }
+    }
+
     await invoices.insertOne(invoice);
 
     // Save customer if provided

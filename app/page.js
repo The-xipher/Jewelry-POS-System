@@ -3,12 +3,19 @@
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ShoppingCart, Package, Printer, FileText, Settings } from 'lucide-react';
+import { BarChart3, ShoppingCart, Package, Printer, FileText, Settings } from 'lucide-react';
 
 export default function Home() {
   const router = useRouter();
 
   const modules = [
+    {
+      title: 'Dashboard',
+      description: 'Business insights and analytics',
+      icon: BarChart3,
+      href: '/dashboard',
+      color: 'text-indigo-500'
+    },
     {
       title: 'Billing',
       description: 'Create invoices and process sales',

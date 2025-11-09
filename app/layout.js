@@ -1,46 +1,37 @@
-import './globals.css';
-import { Inter } from 'next/font/google';
-import Link from 'next/link';
-import { Toaster } from '@/components/ui/sonner';
+import './globals.css'
+import { Inter } from 'next/font/google'
+import { ThemeProvider } from 'next-themes'
+import { Toaster } from '@/components/ui/sonner'
+import { Navbar } from '@/components/navbar'
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
   title: 'Jewelry POS System',
-  description: 'Complete Point of Sale system for jewelry stores',
-};
+  description: 'Point of Sale System for Jewelry Stores',
+}
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <div className="min-h-screen bg-background">
-          <nav className="border-b bg-card">
-            <div className="container mx-auto px-4">
-              <div className="flex h-16 items-center justify-between">
-                <div className="flex items-center space-x-8">
-                  <Link href="/" className="text-xl font-bold text-primary">
-                    💎 POS System
-                  </Link>
-                  <div className="hidden md:flex space-x-4">
-                    <NavLink href="/billing">Billing</NavLink>
-                    <NavLink href="/inventory">Inventory</NavLink>
-                    <NavLink href="/barcode-print">Barcode Print</NavLink>
-                    <NavLink href="/invoices">Invoices</NavLink>
-                    <NavLink href="/settings">Settings</NavLink>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </nav>
-          <main className="container mx-auto px-4 py-6">
-            {children}
-          </main>
-        </div>
-        <Toaster />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <div className="min-h-screen bg-background">
+            <Navbar />
+            <main className="container mx-auto px-4 py-6">
+              {children}
+              <Toaster />
+            </main>
+          </div>
+        </ThemeProvider>
       </body>
     </html>
-  );
+  )
 }
 
 function NavLink({ href, children }) {
@@ -51,5 +42,5 @@ function NavLink({ href, children }) {
     >
       {children}
     </Link>
-  );
+  )
 }
