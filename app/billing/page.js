@@ -36,9 +36,14 @@ export default function BillingPage() {
   const gstAmount = amountAfterDiscount * (gstPercent / 100);
   const grandTotal = amountAfterDiscount + gstAmount;
 
-  // Load shop info on mount
+  // Load shop info on mount and set default GST
   useEffect(() => {
-    useSettingsStore.getState().loadShopInfo();
+    useSettingsStore.getState().loadShopInfo().then(() => {
+      const settings = useSettingsStore.getState().shopInfo;
+      if (settings.defaultGstPercent !== undefined) {
+        setGstPercent(settings.defaultGstPercent);
+      }
+    });
   }, []);
 
   // Search products
@@ -358,9 +363,13 @@ export default function BillingPage() {
                   type="number"
                   min="0"
                   max="100"
+                  step="0.01"
                   value={gstPercent}
                   onChange={(e) => setGstPercent(Number(e.target.value))}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Default from settings: {shopInfo.defaultGstPercent || 0}%
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paymentMode">Payment Mode</Label>
