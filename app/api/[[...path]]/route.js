@@ -190,93 +190,90 @@ async function handleInvoices(request, method, segments) {
     }
 
     // Generate WhatsApp message with formatted bill
-    let whatsappLink = null;
-    if (body.customer?.whatsapp) {
-      const phone = body.customer.whatsapp.replace(/[^0-9]/g, '');
-      
-      // Get shop info for the message
-      const settings = await getCollection('settings');
-      const shopInfo = await settings.findOne({ id: 'shop' }) || {
-        name: 'Jewelry Store',
-        phone: '',
-        address: ''
-      };
-      
-      // Format the date
-      const invoiceDate = new Date(invoice.date).toLocaleDateString('en-IN');
-      
-      // Create items list
-      const itemsList = invoice.items.map((item, index) => 
-        `${index + 1}. ${item.name} (${item.qty}) - ₹${(item.qty * item.price).toFixed(2)}`
-      ).join('\n');
-      
-      // Calculate amounts for the bill
-      const discountAmount = invoice.subTotal * (invoice.discountPercent / 100);
-      const amountAfterDiscount = invoice.subTotal - discountAmount;
-      const gstAmount = amountAfterDiscount * (invoice.gstPercent / 100);
-      
-      // Create the formatted message with proper emojis
-      let billText = `\uD83D\uDC8E *${shopInfo.name || 'Jewelry Store'}*
+let whatsappLink = null;
 
-\uD83D\uDCCD ${shopInfo.address || '123 Main Street'}
+if (body.customer?.whatsapp) {
+  // 1) Normalize phone to WhatsApp E.164-like (digits only, with country code)
+  let phone = (body.customer.whatsapp || '').replace(/\D/g, '');
+  // If it's a 10-digit Indian mobile, prepend 91
+  if (/^[6-9]\d{9}$/.test(phone)) phone = `91${phone}`;
+  // Trim leading 0s (landlines often have them)
+  phone = phone.replace(/^0+/, '');
 
-\uD83D\uDCDE ${shopInfo.phone || '+91-9876543210'}
+  // 2) Get shop info
+  const settings = await getCollection('settings');
+  const shopInfo = (await settings.findOne({ id: 'shop' })) || {
+    name: 'Jewelry Store',
+    phone: '',
+    address: ''
+  };
 
+  // 3) Format date (DD/MM/YYYY to avoid ambiguity)
+  const invoiceDate = new Date(invoice.date).toLocaleDateString('en-IN', {
+    day: '2-digit', month: '2-digit', year: 'numeric'
+  });
 
+  // 4) Build items list
+  const itemsList = invoice.items.map((item, idx) =>
+    `${idx + 1}. 💍 *${item.name}* (${item.qty}) – ₹${(item.qty * item.price).toFixed(2)}`
+  ).join('\n');
 
-\uD83E\uDDFE *INVOICE DETAILS*
+  // 5) Calculations
+  const discountAmount = (invoice.subTotal || 0) * ((invoice.discountPercent || 0) / 100);
+  const amountAfterDiscount = (invoice.subTotal || 0) - discountAmount;
+  const gstAmount = amountAfterDiscount * ((invoice.gstPercent || 0) / 100);
 
-━━━━━━━━━━━━━━━━━━━
+  // 6) Compose message (plain UTF-16 JS string, with \n line breaks)
+  let billText = `🙏 Thank you for shopping with ${shopInfo.name || 'Jewelry Store'}! 🙏
 
-\uD83E\uDDFE Invoice No: ${invoice.id.substring(0, 8)}
-
-\uD83D\uDCC5 Date: ${invoiceDate}
-
-\uD83D\uDC64 Customer: ${invoice.customer?.name || 'Walk-in Customer'}
-
-
+🏪 ${shopInfo.name || 'Jewelry Store'}
+📍 ${shopInfo.address || '123 Main Street'}
+📞 ${shopInfo.phone || '+91-9876543210'}
 
 ━━━━━━━━━━━━━━━━━━━
+🧾 INVOICE DETAILS
+━━━━━━━━━━━━━━━━━━━
+📄 Invoice No: ${String(invoice.id || '').substring(0, 8)}
+📅 Date: ${invoiceDate}
+👤 Customer: ${invoice.customer?.name || 'Walk-in Customer'}
+━━━━━━━━━━━━━━━━━━━
 
+💎 ITEMS PURCHASED
 ${itemsList}
 
+━━━━━━━━━━━━━━━━━━━
+💰 BILLING SUMMARY
+━━━━━━━━━━━━━━━━━━━
+💵 Subtotal: ₹${(invoice.subTotal || 0).toFixed(2)}`;
 
+  if ((invoice.discountPercent || 0) > 0) {
+    billText += `\n💸 *Discount (${invoice.discountPercent}%):* -₹${discountAmount.toFixed(2)}`;
+  }
+
+  if ((invoice.gstPercent || 0) > 0) {
+    billText += `\n🧮 *GST (${invoice.gstPercent}%):* +₹${gstAmount.toFixed(2)}`;
+  }
+
+  billText += `
+
+💳 Payment Mode: ${invoice.paymentMode || 'Cash'}
+💰 Grand Total: ₹${(invoice.grandTotal || 0).toFixed(2)}
 
 ━━━━━━━━━━━━━━━━━━━
+🌟 We appreciate your trust and loyalty!
+💬 For queries, contact us at ${shopInfo.phone || '+91-9876543210'}.`;
 
-\uD83D\uDCB0 *BILLING SUMMARY*
+  // 7) Correct URL encoding — ONLY encodeURIComponent
+  const encoded = encodeURIComponent(billText);
 
-*Subtotal:* ₹${invoice.subTotal.toFixed(2)}`;
+  // Use api.whatsapp.com or wa.me — both are fine
+  whatsappLink = `https://api.whatsapp.com/send?phone=${phone}&text=${encoded}`;
+  // Or: whatsappLink = `https://wa.me/${phone}?text=${encoded}`;
+}
 
-      if (invoice.discountPercent > 0) {
-        billText += `
-*Discount (${invoice.discountPercent}%):* -₹${discountAmount.toFixed(2)}`;
-      }
-      
-      if (invoice.gstPercent > 0) {
-        billText += `
-*GST (${invoice.gstPercent}%):* +₹${gstAmount.toFixed(2)}`;
-      }
-      
-      billText += `
-
-*Grand Total:* ₹${invoice.grandTotal.toFixed(2)}
-
-✅ *Paid via:* ${invoice.paymentMode}
-
-
-
-Thank you for shopping with *${shopInfo.name || 'Jewelry Store'}*! \uD83D\uDCAB`;
-
-      const message = encodeURIComponent(billText);
-      whatsappLink = `https://wa.me/${phone}?text=${message}`;
-    }
-
-    return NextResponse.json({ 
-      invoice, 
-      whatsappLink
-    }, { status: 201 });
+    return NextResponse.json({ invoice, whatsappLink }, { status: 201 });
   }
+
 
   // GET /api/invoices/:id
   if (method === 'GET' && segments.length >= 1) {
