@@ -443,7 +443,7 @@ export default function BillingPage() {
               </>
             )}
           </div>
-          <DialogFooter className="flex-col space-y-2">
+          <DialogFooter className="flex flex-col gap-2 sm:flex-col">
             <Button
               className="w-full"
               onClick={handlePrintThermalPDF}
